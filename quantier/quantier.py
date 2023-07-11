@@ -135,5 +135,3 @@ class QuantierProvider(ProviderV1):
             return [self._simulator]
         else:
             return []
-
-provider = QuantierProvider()
