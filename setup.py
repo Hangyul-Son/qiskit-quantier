@@ -9,8 +9,7 @@ setuptools.setup(
     description="A quantum provider for Qiskit",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=["quantier"],
-    package_dir={"quantier": "quantier"},
+    packages=["quantier_hangyul"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
