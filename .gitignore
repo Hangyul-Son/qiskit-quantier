@@ -4,3 +4,4 @@ dist/
 qiskit_hangyul/__pycache__/__init__.cpython-39.pyc
 .gitignore
 qiskit_hangyul/__pycache__/quantier.cpython-39.pyc
+.DS_Store
