@@ -5,11 +5,11 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="qiskit_hangyul",
-    version="0.3.0",
+    version="0.5.0",
     description="A quantum provider for Qiskit",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=["quantier_hangyul"],
+    packages=["qiskit_hangyul"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

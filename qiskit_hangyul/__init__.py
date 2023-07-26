@@ -1,1 +1,1 @@
-from quantier import QuantierBackend, QuantierProvider
+from .quantier import QuantierBackend, QuantierProvider

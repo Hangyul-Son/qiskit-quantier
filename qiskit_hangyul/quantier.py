@@ -19,33 +19,34 @@ from dotenv import load_dotenv
 import os
 import requests
 import time 
+import random
+import string 
+
 
 load_dotenv()
+
+# db = mysql.connect(user=os.environ.get('DB_USERNAME'), 
+#                      password=os.environ.get('DB_PASSWORD'),
+#                      host=os.environ.get('DB_HOST'),
+#                      database=os.environ.get('DB_TYPE'))
 
 class QuantierJob(Job):
     def __init__(self, backend, qobj, **kwargs):
         self._backend=backend
-        self._job_dict = self.assemble_and_prepare_job(qobj, **kwargs)
-        self.json_str = json.dumps(self._job_dict)
-        user_email = os.getcwd().split('/')[-1]
-        self.post_obj = {
-          "user" : user_email,
-          "qiskit_json": self._job_dict
-        }
-        url = os.environ.get('API_SYSTEM_URL')
-        headers = {'Content-Type': 'application/json'}
-        print(self.post_obj)
-        response = requests.post(url, json=self.post_obj, headers=headers)
+        self.job_dict = self.assemble_and_prepare_job(qobj, **kwargs)
+        self.json_str = json.dumps(self.job_dict)
         
-        if response.status_code == 200 or response.status_code == 201:
-          self.job_id = response.json()['jobId']
-          self.status = 'QUEUED'
-        else:
-          self.job_id = None
-          self.status = 'REQUEST FAILED'
+        #Generate Job ID
+        self.job_id = self.generate_string()
+        
         super().__init__(backend, job_id=self.job_id) # Use actual job_id as per your requirements
-        
-
+    
+    def generate_string(self):
+        backend_name = self._backend.name()  
+        timestamp = int(time.time() * 1000) 
+        random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))  # Random string of length 8
+        return f"jobId-{backend_name}-{timestamp}-{random_string}"
+    
     def assemble_and_prepare_job(self, qobj, **kwargs):
         job = assemble(qobj).to_dict()
         job['header']['backend_name'] = self._backend.name()
@@ -66,21 +67,24 @@ class QuantierJob(Job):
         pass  # implement your logic here
 
     def backend(self):
-        pass  # implement your logic here
+        return self._backend
 
     def job_id(self):
-        pass  # implement your logic here
+        return self.job_id  # implement your logic here
 
     def submit(self):
         pass  # implement your logic here
 
     def print(self):
         return self.json_str
+     
+    def job_dict(self):
+        return self.job_dict
 
 
 
 class QuantierBackend(BackendV1):
-    def __init__(self):
+    def __init__(self, token):
         configuration = BackendConfiguration(
             backend_name='quantier_backend',
             backend_version='1.0.0',
@@ -96,36 +100,85 @@ class QuantierBackend(BackendV1):
             gates=[],
             coupling_map=None
         )
+        self._token = token
         self._aer_simulator = AerSimulator()
         super().__init__(configuration=configuration)
-
-    def run(self, qobj, **kwargs):
-        print("RUN JOB")
-        db = mysql.connect(user=os.environ.get('DB_USERNAME'), 
-                             password=os.environ.get('DB_PASSWORD'),
-                             host=os.environ.get('DB_HOST'),
-                             database=os.environ.get('DB_TYPE'))
-        cursor = db.cursor()
+    
+    def save_job(self, job):
+        post_obj = {  
+          "job_id": job.job_id,
+          "job_json": job.job_dict,
+          "email":  os.getcwd().split('/')[-1]
+        }
+        url = os.environ.get('HOST_URL') + '/job/savejob'
+        headers = {'Content-Type': 'application/json',
+                   'Authorization': 'Bearer ' + self._token}
+        response = requests.post(url, json=post_obj, headers=headers)
+        json_response = json.loads(response.content.decode('utf-8'))
+        print(json_response)
+        if json_response['status_code'] == 200:
+          job.status = 'JOB CREATED'
+        else:
+          job.status = 'JOB SAVE FAILED'
+        
+    def queue_job(self, job):
+        post_obj = {  
+          "job_id": job.job_id,
+          "job_json": job.job_dict
+        }
+        url = os.environ.get('HOST_URL') + '/job/queuejob'
+        headers = {'Content-Type': 'application/json',
+                   'Authorization': 'Bearer ' + self._token}
+        
+        response = requests.post(url, json=post_obj, headers=headers)
+        json_response = json.loads(response.content.decode('utf-8'))
+        if json_response['status_code'] == 200:
+          job.status = 'QUEUED'
+        else:
+          job.status = 'QUEUE REQUEST FAILED'
+          
+    def run(self, qobj, **kwargs):        
+        #Create Job
+        print("CREATING JOB")
         job = QuantierJob(self, qobj, **kwargs)
+        #Save Job
+        print("SAVING JOB")
+        self.save_job(job)
+        #Queue Job
+        print("QUEUING JOB")
+        self.queue_job(job)
         
-        jobid = job.job_id
-        status = job.status
-        email = os.getcwd().split('/')[-1]
-        createdate = time.strftime('%Y-%m-%d %H:%M:%S')
-        qobj_json = job.json_str
+        #DB Connection
+        # cursor = db.cursor()
+        
+        # #Save Transaction
+        # jobid = job.job_id
+        # status = job.status
+        # email = os.getcwd().split('/')[-1]
+        # createdate = time.strftime('%Y-%m-%d %H:%M:%S')
+        # qobj_json = job.json_str
+                
+        # cursor.execute('''insert into transaction 
+        #                (jobid, email, createdate, status, qobj_json) values (%s, %s, %s, %s, %s)''',
+        #                (jobid, email, createdate, status, qobj_json))
         
         
-        print(job.json_str)
-        cursor.execute('''insert into transaction 
-                       (jobid, email, createdate, status, qobj_json) values (%s, %s, %s, %s, %s)''',
-                       (jobid, email, createdate, status, qobj_json))
         
-        cursor.close()
-        db.commit()
-        db.close()
-        print("SAVED JOB")
+        # #Save Job
+        # qobj_id = job.job_dict['qobj_id']
+        # header = json.dumps(job.job_dict['header'])
+        
+        # cursor.execute('''insert into Job 
+        #                (jobid, email, qobj_id, status, header, createdate) values (%s, %s, %s, %s, %s, %s)''',
+        #                (jobid, email, qobj_id, status, header, createdate))
+       
+        # cursor.close()
+        # db.commit()
+        # print("SAVED JOB")
         return (job)
+    
 
+      
         
 
     @classmethod
@@ -138,10 +191,11 @@ class QuantierBackend(BackendV1):
 
 
 class QuantierProvider(ProviderV1):
-    def __init__(self):
+    def __init__(self, token):
         super().__init__()
-        self._backend = QuantierBackend()
+        self._backend = QuantierBackend(token)
         self._simulator = AerSimulator()
+        self._token = token
 
     def get_backend(self, name=None, **kwargs):
         if name is None or name.lower() == 'quantier_simulator':
